@@ -1,1 +1,30 @@
-[]
+[
+  {
+    "id": "1d2557e4-a1da-477a-8f7e-0ca756bdfa57",
+    "willingToContact": "yes",
+    "willingAsFriends": "yes",
+    "note": "",
+    "createdAt": "2026-04-10T09:55:23.705Z"
+  },
+  {
+    "id": "669694e6-697b-46c7-826a-bccd97ca7bfe",
+    "willingToContact": "yes",
+    "willingAsFriends": "yes",
+    "note": "",
+    "createdAt": "2026-04-10T09:57:01.810Z"
+  },
+  {
+    "id": "36896544-2c24-442d-bb72-f8f11a1dc5cb",
+    "willingToContact": "yes",
+    "willingAsFriends": "yes",
+    "note": "",
+    "createdAt": "2026-04-10T09:57:05.046Z"
+  },
+  {
+    "id": "377f053d-9fcb-4e6c-8eae-af8425bd351b",
+    "willingToContact": "yes",
+    "willingAsFriends": "yes",
+    "note": "wqw",
+    "createdAt": "2026-04-10T09:57:07.029Z"
+  }
+]
