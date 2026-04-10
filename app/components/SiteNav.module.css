@@ -1,0 +1,113 @@
+.wrap {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  justify-content: center;
+  padding: 1rem 1rem 0;
+  pointer-events: none;
+}
+
+.inner {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px 7px 16px;
+  border-radius: 100px;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.82) 0%,
+    rgba(252, 252, 251, 0.76) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  box-shadow: 0 4px 32px rgba(28, 25, 23, 0.07),
+    0 8px 40px -12px rgba(13, 148, 136, 0.1),
+    0 1px 0 rgba(255, 255, 255, 0.95) inset;
+  backdrop-filter: blur(20px) saturate(1.15);
+  -webkit-backdrop-filter: blur(20px) saturate(1.15);
+}
+
+.brand {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent-deep);
+  padding-right: 10px;
+  margin-right: 2px;
+  border-right: 1px solid rgba(231, 229, 228, 0.95);
+  opacity: 0.9;
+}
+
+.links {
+  display: flex;
+  gap: 5px;
+}
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 17px;
+  border-radius: 100px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  text-decoration: none;
+  transition: color 0.22s ease, background 0.22s ease, box-shadow 0.22s ease,
+    transform 0.15s ease;
+}
+
+.link:hover {
+  color: var(--ink);
+  background: rgba(240, 253, 250, 0.85);
+  transform: translateY(-1px);
+}
+
+.link:active {
+  transform: translateY(0);
+}
+
+.linkActive {
+  color: #fff;
+  background: linear-gradient(
+    145deg,
+    #14b8a6 0%,
+    var(--accent) 40%,
+    var(--accent-deep) 100%
+  );
+  box-shadow: 0 4px 20px rgba(13, 148, 136, 0.32),
+    0 0 0 1px rgba(255, 255, 255, 0.12) inset;
+}
+
+.linkActive:hover {
+  color: #fff;
+  background: linear-gradient(
+    145deg,
+    var(--accent-hover) 0%,
+    var(--accent) 45%,
+    var(--accent-deep) 100%
+  );
+  transform: translateY(-1px);
+}
+
+.icon {
+  font-size: 0.95rem;
+  line-height: 1;
+  opacity: 0.95;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .link,
+  .linkActive {
+    transition: color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .link:hover,
+  .linkActive:hover {
+    transform: none;
+  }
+}

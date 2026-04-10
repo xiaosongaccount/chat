@@ -1,92 +1,152 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import Link from "next/link";
+import styles from "./letter.module.css";
+import {
+  FORM_DRAFT_KEY,
+  LAST_SUBMIT_KEY,
+  SUBMIT_LOG_KEY,
+} from "./lib/storage-keys";
 
 type SubmitStatus = "idle" | "submitting" | "success" | "error";
 type AnswerValue = "yes" | "no" | "";
-type ChatMessage = {
-  id: string;
-  text: string;
-  createdAt: string;
-  side: "left" | "right";
+
+type LastSubmitStored = {
+  message?: string;
+  submittedAt?: string;
+  willingToContact?: AnswerValue;
+  willingAsFriends?: AnswerValue;
+  note?: string;
+  serverSaved?: boolean;
 };
 
-const FORM_DRAFT_KEY = "xql-form-draft";
-const LAST_SUBMIT_KEY = "xql-last-submit";
-const CHAT_HISTORY_KEY = "xql-chat-history";
+type SubmitLogEntry = {
+  at: string;
+  willingToContact: "yes" | "no";
+  willingAsFriends: "yes" | "no";
+  note: string;
+  serverSaved?: boolean;
+};
 
-export default function Home() {
+function isAnswer(v: unknown): v is "yes" | "no" {
+  return v === "yes" || v === "no";
+}
+
+function readSubmitLog(): SubmitLogEntry[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(SUBMIT_LOG_KEY);
+    if (!raw) return [];
+    const p = JSON.parse(raw) as unknown;
+    return Array.isArray(p) ? (p as SubmitLogEntry[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function appendSubmitLog(entry: Omit<SubmitLogEntry, "at">) {
+  const list = readSubmitLog();
+  list.push({ ...entry, at: new Date().toISOString() });
+  localStorage.setItem(SUBMIT_LOG_KEY, JSON.stringify(list.slice(-40)));
+}
+
+function formatShortTime(iso: string) {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString("zh-CN", {
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+export default function LetterPage() {
   const [willingToContact, setWillingToContact] = useState<AnswerValue>("");
   const [willingAsFriends, setWillingAsFriends] = useState<AnswerValue>("");
   const [note, setNote] = useState<string>("");
   const [status, setStatus] = useState<SubmitStatus>("idle");
   const [message, setMessage] = useState<string>("");
-  const [chatInput, setChatInput] = useState<string>("");
-  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
-  const [chatSide, setChatSide] = useState<"left" | "right">("right");
-  const chatScrollRef = useRef<HTMLDivElement>(null);
+  const [storageReady, setStorageReady] = useState(false);
+  const [persistHint, setPersistHint] = useState<string>("");
+  const [submitCount, setSubmitCount] = useState(0);
+  const [lastSubmitAt, setLastSubmitAt] = useState<string | null>(null);
+  const [lastServerSaved, setLastServerSaved] = useState<boolean | null>(null);
 
   const canSubmit = willingToContact !== "" && willingAsFriends !== "";
 
   useEffect(() => {
-    const draftRaw = localStorage.getItem(FORM_DRAFT_KEY);
-    if (draftRaw) {
-      try {
-        const draft = JSON.parse(draftRaw) as {
-          willingToContact?: AnswerValue;
-          willingAsFriends?: AnswerValue;
-          note?: string;
-        };
-        if (draft.willingToContact) setWillingToContact(draft.willingToContact);
-        if (draft.willingAsFriends) setWillingAsFriends(draft.willingAsFriends);
-        if (typeof draft.note === "string") setNote(draft.note);
-      } catch {
-        localStorage.removeItem(FORM_DRAFT_KEY);
-      }
-    }
+    queueMicrotask(() => {
+      let q1: AnswerValue = "";
+      let q2: AnswerValue = "";
+      let noteVal = "";
 
-    const lastSubmitRaw = localStorage.getItem(LAST_SUBMIT_KEY);
-    if (lastSubmitRaw) {
-      try {
-        const lastSubmit = JSON.parse(lastSubmitRaw) as { message?: string };
-        if (lastSubmit.message) {
-          setStatus("success");
-          setMessage(lastSubmit.message);
+      const draftRaw = localStorage.getItem(FORM_DRAFT_KEY);
+      let hadMeaningfulDraft = false;
+      if (draftRaw) {
+        try {
+          const draft = JSON.parse(draftRaw) as {
+            willingToContact?: AnswerValue;
+            willingAsFriends?: AnswerValue;
+            note?: string;
+          };
+          if (isAnswer(draft.willingToContact)) q1 = draft.willingToContact;
+          if (isAnswer(draft.willingAsFriends)) q2 = draft.willingAsFriends;
+          if (typeof draft.note === "string") noteVal = draft.note;
+          hadMeaningfulDraft =
+            isAnswer(draft.willingToContact) ||
+            isAnswer(draft.willingAsFriends) ||
+            typeof draft.note === "string";
+        } catch {
+          localStorage.removeItem(FORM_DRAFT_KEY);
         }
-      } catch {
-        localStorage.removeItem(LAST_SUBMIT_KEY);
       }
-    }
 
-    const chatRaw = localStorage.getItem(CHAT_HISTORY_KEY);
-    if (chatRaw) {
-      try {
-        const chat = JSON.parse(chatRaw) as ChatMessage[];
-        if (Array.isArray(chat)) setChatHistory(chat);
-      } catch {
-        localStorage.removeItem(CHAT_HISTORY_KEY);
+      const lastSubmitRaw = localStorage.getItem(LAST_SUBMIT_KEY);
+      if (lastSubmitRaw) {
+        try {
+          const last = JSON.parse(lastSubmitRaw) as LastSubmitStored;
+          if (!isAnswer(q1) && isAnswer(last.willingToContact))
+            q1 = last.willingToContact;
+          if (!isAnswer(q2) && isAnswer(last.willingAsFriends))
+            q2 = last.willingAsFriends;
+          if (!hadMeaningfulDraft && typeof last.note === "string")
+            noteVal = last.note;
+          if (last.message) {
+            setStatus("success");
+            setMessage(last.message);
+          }
+          if (last.submittedAt) setLastSubmitAt(last.submittedAt);
+          if (typeof last.serverSaved === "boolean")
+            setLastServerSaved(last.serverSaved);
+        } catch {
+          localStorage.removeItem(LAST_SUBMIT_KEY);
+        }
       }
-    }
+
+      setWillingToContact(q1);
+      setWillingAsFriends(q2);
+      setNote(noteVal);
+
+      const log = readSubmitLog();
+      setSubmitCount(log.length);
+      if (log.length > 0) setLastSubmitAt(log[log.length - 1].at);
+
+      setStorageReady(true);
+    });
   }, []);
 
   useEffect(() => {
+    if (!storageReady) return;
     localStorage.setItem(
       FORM_DRAFT_KEY,
       JSON.stringify({ willingToContact, willingAsFriends, note }),
     );
-  }, [willingToContact, willingAsFriends, note]);
-
-  useEffect(() => {
-    localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(chatHistory));
-  }, [chatHistory]);
-
-  useEffect(() => {
-    const el = chatScrollRef.current;
-    if (!el) return;
-    requestAnimationFrame(() => {
-      el.scrollTop = el.scrollHeight;
-    });
-  }, [chatHistory]);
+  }, [willingToContact, willingAsFriends, note, storageReady]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -98,6 +158,7 @@ export default function Home() {
 
     setStatus("submitting");
     setMessage("");
+    setPersistHint("");
 
     try {
       const response = await fetch("/api/response", {
@@ -112,7 +173,10 @@ export default function Home() {
         }),
       });
 
-      const payload = (await response.json()) as { message?: string };
+      const payload = (await response.json()) as {
+        message?: string;
+        serverSaved?: boolean;
+      };
 
       if (!response.ok) {
         throw new Error(payload.message ?? "提交失败");
@@ -120,17 +184,44 @@ export default function Home() {
 
       const successMessage =
         payload.message ?? "谢谢你认真看完，也谢谢你的回答。";
+      const serverSaved = payload.serverSaved === true;
+      const submittedAt = new Date().toISOString();
+
       setStatus("success");
       setMessage(successMessage);
+      setLastSubmitAt(submittedAt);
+      setLastServerSaved(serverSaved);
+
+      const snapshot: LastSubmitStored = {
+        message: successMessage,
+        submittedAt,
+        willingToContact,
+        willingAsFriends,
+        note: note.trim(),
+        serverSaved,
+      };
+      localStorage.setItem(LAST_SUBMIT_KEY, JSON.stringify(snapshot));
       localStorage.setItem(
-        LAST_SUBMIT_KEY,
+        FORM_DRAFT_KEY,
         JSON.stringify({
-          message: successMessage,
-          submittedAt: new Date().toISOString(),
           willingToContact,
           willingAsFriends,
           note: note.trim(),
         }),
+      );
+
+      appendSubmitLog({
+        willingToContact,
+        willingAsFriends,
+        note: note.trim(),
+        serverSaved,
+      });
+      setSubmitCount(readSubmitLog().length);
+
+      setPersistHint(
+        serverSaved
+          ? "本次已写入项目里的 data/responses.json（本机开发时有效）。"
+          : "本次未写入服务器文件，内容已安全存在你的浏览器中。",
       );
     } catch (error) {
       const detail = error instanceof Error ? error.message : "未知错误";
@@ -139,345 +230,171 @@ export default function Home() {
     }
   }
 
-  function handleAddChatMessage() {
-    const text = chatInput.trim();
-    if (!text) return;
-    setChatHistory((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        text,
-        createdAt: new Date().toISOString(),
-        side: chatSide,
-      },
-    ]);
-    setChatInput("");
-  }
-
-  function handleClearChat() {
-    setChatHistory([]);
-    localStorage.removeItem(CHAT_HISTORY_KEY);
-  }
-
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        padding: "24px",
-        background:
-          "radial-gradient(circle at top, #fff1f2 0%, #fff 35%, #f9fafb 100%)",
-      }}
-    >
-      <section
-        style={{
-          width: "100%",
-          maxWidth: "560px",
-          background: "rgba(255,255,255,0.92)",
-          borderRadius: "18px",
-          border: "1px solid #f1d5db",
-          padding: "28px",
-          boxShadow: "0 16px 40px rgba(167, 47, 88, 0.1)",
-        }}
-      >
-        <h1
-          style={{
-            marginTop: 0,
-            marginBottom: "10px",
-            fontSize: "28px",
-            color: "#7a2940",
-            letterSpacing: "0.5px",
-          }}
-        >
-          徐秋玲，给你的一封小小回信
-        </h1>
-        <p
-          style={{
-            marginTop: 0,
-            marginBottom: "8px",
-            color: "#5f4b53",
-            lineHeight: 1.75,
-          }}
-        >
-          我想把心里话说清楚，也想把选择权交给你。
-          <br />
-          无论你的答案是什么，我都会认真接住，也会尊重你。
-        </p>
-        <p
-          style={{
-            marginTop: 0,
-            marginBottom: "22px",
-            color: "#9b6b78",
-            fontSize: "14px",
-          }}
-        >
-          这不是逼你决定，只是想给彼此一个明白。
-        </p>
-
-        <form onSubmit={handleSubmit}>
-          <fieldset
-            style={{ border: "none", padding: 0, marginBottom: "18px" }}
-          >
-            <legend style={{ fontWeight: 600, marginBottom: "10px" }}>
-              1) 你还愿意和我继续保持联系吗？
-            </legend>
-            <label style={{ display: "block", marginBottom: "8px" }}>
-              <input
-                type="radio"
-                name="q1"
-                value="yes"
-                checked={willingToContact === "yes"}
-                onChange={(e) =>
-                  setWillingToContact(e.target.value as AnswerValue)
-                }
-              />{" "}
-              愿意，我们可以慢慢来
-            </label>
-            <label style={{ display: "block" }}>
-              <input
-                type="radio"
-                name="q1"
-                value="no"
-                checked={willingToContact === "no"}
-                onChange={(e) =>
-                  setWillingToContact(e.target.value as AnswerValue)
-                }
-              />{" "}
-              暂时不愿意
-            </label>
-          </fieldset>
-
-          <fieldset
-            style={{ border: "none", padding: 0, marginBottom: "18px" }}
-          >
-            <legend style={{ fontWeight: 600, marginBottom: "10px" }}>
-              2) 你愿意我们重新以朋友身份相处吗？
-            </legend>
-            <label style={{ display: "block", marginBottom: "8px" }}>
-              <input
-                type="radio"
-                name="q2"
-                value="yes"
-                checked={willingAsFriends === "yes"}
-                onChange={(e) =>
-                  setWillingAsFriends(e.target.value as AnswerValue)
-                }
-              />{" "}
-              愿意，先从朋友开始
-            </label>
-            <label style={{ display: "block" }}>
-              <input
-                type="radio"
-                name="q2"
-                value="no"
-                checked={willingAsFriends === "no"}
-                onChange={(e) =>
-                  setWillingAsFriends(e.target.value as AnswerValue)
-                }
-              />{" "}
-              还不想以朋友方式相处
-            </label>
-          </fieldset>
-
-          <label style={{ display: "block", marginBottom: "18px" }}>
-            <span
-              style={{ display: "block", marginBottom: "8px", fontWeight: 600 }}
-            >
-              如果你愿意，给我留一句话（可选）
-            </span>
-            <textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              rows={4}
-              style={{
-                width: "100%",
-                borderRadius: "10px",
-                border: "1px solid #d4dae5",
-                padding: "10px 12px",
-                resize: "vertical",
-                font: "inherit",
-              }}
-              placeholder="比如：希望以后怎么相处，或你现在真实的想法"
-            />
-          </label>
-
-          <button
-            type="submit"
-            disabled={status === "submitting"}
-            style={{
-              width: "100%",
-              background: "linear-gradient(135deg, #b63a62 0%, #d85a83 100%)",
-              color: "#fff",
-              border: "none",
-              borderRadius: "10px",
-              padding: "12px 14px",
-              fontWeight: 600,
-              cursor: status === "submitting" ? "not-allowed" : "pointer",
-              opacity: status === "submitting" ? 0.75 : 1,
-            }}
-          >
-            {status === "submitting" ? "正在发送..." : "把答案告诉我"}
-          </button>
-        </form>
-
-        {message ? (
-          <p
-            style={{
-              marginTop: "14px",
-              marginBottom: 0,
-              color: status === "success" ? "#7a2940" : "#b42318",
-              fontWeight: 500,
-            }}
-          >
-            {message}
+    <main className={styles.shell}>
+      <div className={styles.layout}>
+        <aside className={styles.aside} aria-hidden>
+          <div className={styles.asideLine} />
+          <p className={styles.asideQuote}>
+            真诚的话，不必太大声；认真选的答案，已经足够。
           </p>
-        ) : null}
+          <div className={styles.asideMark}>寄</div>
+        </aside>
 
-        <hr
-          style={{
-            border: "none",
-            borderTop: "1px solid #f1d5db",
-            margin: "24px 0",
-          }}
-        />
-        <h2 style={{ margin: "0 0 8px", fontSize: "20px", color: "#7a2940" }}>
-          聊天记录
-        </h2>
-        <p style={{ margin: "0 0 12px", color: "#7c6a70", fontSize: "14px" }}>
-          这里是本地聊天区，内容只保存在当前浏览器。
-        </p>
+        <div className={styles.main}>
+          <header className={styles.hero}>
+            <p className={styles.eyebrow}>
+              <span className={styles.eyebrowDot} />
+              To 徐秋玲
+            </p>
+            <h1 className={styles.title}>
+              给你的一封
+              <span className={styles.titleAccent}>小小回信</span>
+            </h1>
+            <p className={styles.lead}>
+              我想把心里话说清楚，也想把选择权交给你。无论你的答案是什么，我都会认真接住，也会尊重你。
+            </p>
+            <p className={styles.leadMuted}>
+              这不是逼你决定，只是想给彼此一个明白。
+            </p>
+          </header>
 
-        <div
-          ref={chatScrollRef}
-          style={{
-            border: "1px solid #ecd4db",
-            borderRadius: "10px",
-            padding: "10px",
-            minHeight: "120px",
-            maxHeight: "220px",
-            overflowY: "auto",
-            background: "#fff7f9",
-          }}
-        >
-          {chatHistory.length === 0 ? (
-            <p style={{ margin: 0, color: "#9b8b90" }}>还没有聊天记录。</p>
-          ) : (
-            chatHistory.map((item) => (
-              <div
-                key={item.id}
-                style={{
-                  display: "flex",
-                  justifyContent:
-                    item.side === "right" ? "flex-end" : "flex-start",
-                  marginBottom: "8px",
-                }}
-              >
-                <p
-                  style={{
-                    margin: 0,
-                    maxWidth: "75%",
-                    borderRadius: "14px",
-                    padding: "8px 12px",
-                    color: item.side === "right" ? "#fff" : "#5b444b",
-                    background: item.side === "right" ? "#b63a62" : "#ffe8ef",
-                    lineHeight: 1.5,
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-word",
-                  }}
-                >
-                  {item.text}
-                </p>
+          {storageReady && submitCount > 0 ? (
+            <div className={styles.persistStrip} role="status">
+              <span className={styles.persistIcon} aria-hidden>
+                ✓
+              </span>
+              <div className={styles.persistText}>
+                <strong>本地已留存</strong>
+                共 {submitCount} 次提交
+                {lastSubmitAt ? ` · 最近 ${formatShortTime(lastSubmitAt)}` : ""}
+                {lastServerSaved === true
+                  ? " · 上次已写入服务器文件"
+                  : lastServerSaved === false
+                    ? " · 上次仅浏览器保存"
+                    : ""}
               </div>
-            ))
-          )}
-        </div>
+            </div>
+          ) : null}
 
-        <div
-          style={{
-            marginTop: "10px",
-            marginBottom: "8px",
-            display: "flex",
-            justifyContent: "space-between",
-            gap: "8px",
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => setChatSide("left")}
-            style={{
-              border: "1px solid #dcbac4",
-              borderRadius: "999px",
-              padding: "6px 10px",
-              background: chatSide === "left" ? "#b63a62" : "#fff",
-              color: chatSide === "left" ? "#fff" : "#7a2940",
-              cursor: "pointer",
-            }}
+          <article
+            className={`${styles.paper} ${storageReady ? styles.paperVisible : styles.paperHidden}`}
           >
-            徐秋玲
-          </button>
-          <button
-            type="button"
-            onClick={() => setChatSide("right")}
-            style={{
-              border: "1px solid #dcbac4",
-              borderRadius: "999px",
-              padding: "6px 10px",
-              background: chatSide === "right" ? "#b63a62" : "#fff",
-              color: chatSide === "right" ? "#fff" : "#7a2940",
-              cursor: "pointer",
-            }}
-          >
-            宋健波
-          </button>
-        </div>
+            <div className={styles.paperCorner} aria-hidden />
+            <div className={styles.panelHeader}>
+              <h2 className={styles.panelTitle}>两个问题</h2>
+              <span className={styles.panelHint}>按真实想法选择即可</span>
+            </div>
 
-        <div style={{ marginTop: "10px", display: "flex", gap: "8px" }}>
-          <input
-            value={chatInput}
-            onChange={(e) => setChatInput(e.target.value)}
-            placeholder="输入想说的话，点发送后会保存到本地"
-            style={{
-              flex: 1,
-              borderRadius: "10px",
-              border: "1px solid #dcbac4",
-              padding: "10px 12px",
-              font: "inherit",
-            }}
-          />
-          <button
-            type="button"
-            onClick={handleAddChatMessage}
-            style={{
-              border: "none",
-              borderRadius: "10px",
-              padding: "10px 14px",
-              background: "#b63a62",
-              color: "#fff",
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-          >
-            发送
-          </button>
+            <form onSubmit={handleSubmit}>
+              <fieldset className={styles.fieldset}>
+                <legend className={styles.legend}>
+                  1）你还愿意和我继续保持联系吗？
+                </legend>
+                <div className={styles.radioList}>
+                  <label className={styles.radioOption}>
+                    <input
+                      type="radio"
+                      name="q1"
+                      value="yes"
+                      checked={willingToContact === "yes"}
+                      onChange={(e) =>
+                        setWillingToContact(e.target.value as AnswerValue)
+                      }
+                    />
+                    <span>愿意，我们可以慢慢来</span>
+                  </label>
+                  <label className={styles.radioOption}>
+                    <input
+                      type="radio"
+                      name="q1"
+                      value="no"
+                      checked={willingToContact === "no"}
+                      onChange={(e) =>
+                        setWillingToContact(e.target.value as AnswerValue)
+                      }
+                    />
+                    <span>暂时不愿意</span>
+                  </label>
+                </div>
+              </fieldset>
+
+              <fieldset className={styles.fieldset}>
+                <legend className={styles.legend}>
+                  2）你愿意重新以朋友身份相处吗？
+                </legend>
+                <div className={styles.radioList}>
+                  <label className={styles.radioOption}>
+                    <input
+                      type="radio"
+                      name="q2"
+                      value="yes"
+                      checked={willingAsFriends === "yes"}
+                      onChange={(e) =>
+                        setWillingAsFriends(e.target.value as AnswerValue)
+                      }
+                    />
+                    <span>愿意，先从朋友开始</span>
+                  </label>
+                  <label className={styles.radioOption}>
+                    <input
+                      type="radio"
+                      name="q2"
+                      value="no"
+                      checked={willingAsFriends === "no"}
+                      onChange={(e) =>
+                        setWillingAsFriends(e.target.value as AnswerValue)
+                      }
+                    />
+                    <span>还不想以朋友方式相处</span>
+                  </label>
+                </div>
+              </fieldset>
+
+              <label className={styles.textareaLabel}>
+                <span>如果你愿意，给我留一句话（可选）</span>
+                <textarea
+                  className={styles.textarea}
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  rows={4}
+                  placeholder="比如：希望以后怎么相处，或你现在真实的想法"
+                />
+              </label>
+
+              <button
+                type="submit"
+                className={styles.submitBtn}
+                disabled={status === "submitting"}
+              >
+                {status === "submitting" ? "正在发送…" : "把答案告诉我"}
+              </button>
+            </form>
+
+            {message ? (
+              <div
+                className={`${styles.feedback} ${
+                  status === "success"
+                    ? styles.feedbackSuccess
+                    : styles.feedbackError
+                }`}
+              >
+                <p className={styles.feedbackMain}>{message}</p>
+                {status === "success" && persistHint ? (
+                  <p className={styles.feedbackMeta}>{persistHint}</p>
+                ) : null}
+              </div>
+            ) : null}
+          </article>
+
+          <Link href="/chat" className={styles.toChat}>
+            去对话里慢慢写
+            <span className={styles.toChatArrow} aria-hidden>
+              →
+            </span>
+          </Link>
         </div>
-        <button
-          type="button"
-          onClick={handleClearChat}
-          style={{
-            marginTop: "8px",
-            border: "1px solid #dcbac4",
-            borderRadius: "10px",
-            padding: "8px 12px",
-            background: "#fff",
-            color: "#7a2940",
-            cursor: "pointer",
-          }}
-        >
-          清空聊天记录
-        </button>
-      </section>
+      </div>
     </main>
   );
 }

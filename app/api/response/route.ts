@@ -71,23 +71,27 @@ export async function POST(request: NextRequest) {
       const list = await readResponses();
       list.push(item);
       await fs.writeFile(dataFilePath, JSON.stringify(list, null, 2), "utf-8");
-      return NextResponse.json({ message: "已收到你的选择，谢谢你。" });
+      return NextResponse.json({
+        message: "已收到你的选择，谢谢你。",
+        serverSaved: true,
+      });
     } catch (fsError) {
       if (isReadonlyFilesystemError(fsError)) {
         return NextResponse.json({
           message:
             "谢谢你。线上环境无法在服务器写入文件，你的选择已保存在本设备浏览器里。",
+          serverSaved: false,
         });
       }
       console.error(fsError);
       return NextResponse.json(
-        { message: "服务器写入失败，请稍后再试。" },
+        { message: "服务器写入失败，请稍后再试。", serverSaved: false },
         { status: 500 },
       );
     }
   } catch {
     return NextResponse.json(
-      { message: "服务器写入失败，请稍后再试。" },
+      { message: "服务器写入失败，请稍后再试。", serverSaved: false },
       { status: 500 },
     );
   }
